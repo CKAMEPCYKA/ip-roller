@@ -2,10 +2,10 @@ import time
 import requests
 
 # === НАСТРОЙКИ АВТОРИЗАЦИИ SELECTEL ===
-ACCOUNT_ID = "123456"  # Твой 6-значный номер аккаунта
-PROJECT_ID = "ваш_id_проекта"  # UUID проекта в Облачной платформе
-USERNAME = "имя_сервисного_юзера"  # Логин сервисного пользователя
-PASSWORD = "пароль_сервисного_юзера"  # Пароль сервисного пользователя
+ACCOUNT_ID = "728238"  # Твой 6-значный номер аккаунта
+PROJECT_ID = "d99378ada60c43d28971ee8386c6cce6"  # UUID проекта в Облачной платформе
+USERNAME = "Brooklyn"  # Логин сервисного пользователя
+PASSWORD = "aX7AZK]+0:HTQ,|M%$Fy"  # Пароль сервисного пользователя
 
 # === НУЖНЫЕ ПРЕФИКСЫ IP ===
 TARGET_PREFIXES = (
@@ -25,8 +25,8 @@ MAX_ATTEMPTS_PER_RUN = 200  # Общее число попыток за запу
 DELAY_BETWEEN_ATTEMPTS = 5  # Пауза между попытками (сек)
 
 # Настройки Telegram (по желанию)
-TG_BOT_TOKEN = ""
-TG_CHAT_ID = ""
+TG_BOT_TOKEN = "8807138880:AAHVhJEo27eA9atiFBy4aFP987i7A73tOy0"
+TG_CHAT_ID = "1655842429"
 
 AUTH_URL = "https://cloud.api.selcloud.ru/identity/v3/auth/tokens"
 
