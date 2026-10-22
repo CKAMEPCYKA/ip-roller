@@ -230,22 +230,17 @@ def main():
             if code == 401:
                 print("[*] Обновляем токен авторизации...")
                 token, _ = get_keystone_session()
-headers["X-Auth-Token"] = token
+                headers["X-Auth-Token"] = token
             elif code in (403, 409) and "Quota exceeded" in text:
                 cleaned = cleanup_region_ips(headers, net_url, current_reg)
                 if cleaned == 0:
-                    # Если чистить нечего, а квота превышена — значит в этой зоне лимит 0 или все занято
-                    print(
-                        f"[*] В зоне {current_reg} нулевая квота на плавающие IP. Исключаем её из списка."
-                    )
+                    print(f"[*] В зоне {current_reg} нулевая квота. Исключаем её.")
                     region_names.remove(current_reg)
                 else:
                     reg_index += 1
                     time.sleep(5)
             elif code in (413, 429):
-                print(
-                    f"[*] Лимит запросов в зоне {current_reg}! Переключаемся на следующую и ждем 20 сек..."
-                )
+                print(f"[*] Лимит запросов в зоне {current_reg}! Ждем 20 сек...")
                 cleanup_region_ips(headers, net_url, current_reg)
                 reg_index += 1
                 time.sleep(20)
@@ -263,9 +258,7 @@ headers["X-Auth-Token"] = token
         time.sleep(DELAY_BETWEEN_ATTEMPTS)
 
     if not region_names:
-        print(
-            "\n[!] Во всех зонах ru-* закончилась квота на плавающие IP. Проверь раздел 'Квоты' в панели Selectel!"
-        )
+        print("\n[!] Во всех зонах ru-* закончилась квота на плавающие IP.")
     else:
         print(f"\nВсе {MAX_ATTEMPTS_PER_RUN} попыток завершены.")
 
