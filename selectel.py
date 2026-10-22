@@ -262,6 +262,4 @@ def main():
     else:
         print(f"\nВсе {MAX_ATTEMPTS_PER_RUN} попыток завершены.")
 
-
-if name == "main":
-    main()
+main()
