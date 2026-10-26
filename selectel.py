@@ -2,10 +2,10 @@ import time
 import requests
 
 # === НАСТРОЙКИ АВТОРИЗАЦИИ SELECTEL ===
-ACCOUNT_ID = "728238"  # Твой 6-значный номер аккаунта
+ACCOUNT_ID = "728238"  # Твой 6-значный номер аккаунт
 PROJECT_ID = "d99378ada60c43d28971ee8386c6cce6"  # UUID проекта в Облачной платформе
 USERNAME = "Brooklyn"  # Логин сервисного пользователя
-PASSWORD = "aX7AZK]+0:HTQ,|M%$Fy"  # Пароль сервисного пользователя
+PASSWORD = "aX7AZK]+0:HTQ, [M%$Fy"  # Пароль сервисного пользователя
 
 # === НУЖНЫЕ ПРЕФИКСЫ IP ===
 TARGET_PREFIXES = (
@@ -21,10 +21,13 @@ TARGET_PREFIXES = (
     "5.178.85.",
 )
 
-MAX_ATTEMPTS_PER_RUN = 200  # Общее число попыток за запуск
+MAX_ATTEMPTS_PER_RUN = 500  # Общее число попыток за запуск
+ATTEMPTS_PER_ZONE = (
+    10  # Сколько попыток подряд делать в одной зоне до переключения
+)
 DELAY_BETWEEN_ATTEMPTS = 5  # Пауза между попытками (сек)
 
-# Настройки Telegram (по желанию)
+# Настройки Telegram (обязательно заполни для уведомлений)
 TG_BOT_TOKEN = "8807138880:AAHVhJEo27eA9atiFBy4aFP987i7A73tOy0"
 TG_CHAT_ID = "1655842429"
 
@@ -44,12 +47,10 @@ def send_tg_message(text):
 
 
 def is_target_ip(ip_str):
-    """Проверяет, начинается ли IP на любой из нужных префиксов."""
     return ip_str.startswith(TARGET_PREFIXES)
 
 
 def get_keystone_session():
-    """Авторизуется и достает ТОЛЬКО зоны ru-* из каталога Selectel."""
     payload = {
         "auth": {
             "identity": {
@@ -71,7 +72,6 @@ def get_keystone_session():
     token = resp.headers.get("X-Subject-Token")
     catalog = resp.json().get("token", {}).get("catalog", [])
 
-    # Собираем только российские регионы (начинаются на "ru-")
     regions_map = {}
     for service in catalog:
         if service.get("type") == "network":
@@ -128,8 +128,9 @@ def delete_floating_ip(headers, network_url, fip_id):
         time.sleep(3)
     print(f"[!] Не удалось сразу удалить {fip_id}: код {resp.status_code}")
     return False
+
+
 def cleanup_region_ips(headers, network_url, region_name):
-    """Удаляет все непривязанные нецелевые IP в конкретном регионе и возвращает их количество."""
     cleaned = 0
     try:
         for fip in list_floating_ips(headers, network_url):
@@ -157,20 +158,17 @@ def main():
 
     for reg, net_url in sorted(regions_map.items()):
         try:
-            # 1. Проверяем, вдруг нужный IP уже выбит
             existing = list_floating_ips(headers, net_url)
             for fip in existing:
                 ip_str = fip.get("floating_ip_address", "")
                 if is_target_ip(ip_str):
-                    print(
-                        f"\n[+] УРА! Нужный IP уже есть в зоне {reg}: {ip_str}. Выходим!"
-                    )
+                    msg = f"✅ Нужный IP уже есть на аккаунте (зона {reg}): {ip_str}. Прокрутка не требуется!"
+                    print(f"\n{msg}")
+                    send_tg_message(msg)
                     return
 
-            # 2. Чистим хвосты от старых запусков
             cleanup_region_ips(headers, net_url, reg)
 
-            # 3. Ищем ID внешней сети
             ext_net_id = get_external_network_id(headers, net_url)
             if ext_net_id:
                 active_regions[reg] = {"url": net_url, "ext_net_id": ext_net_id}
@@ -182,13 +180,23 @@ def main():
 
     region_names = list(active_regions.keys())
     if not region_names:
-        print("[!] Нет ни одной доступной зоны ru-* для работы.")
+        msg = "⚠️ Не удалось запустить прокрутку: нет ни одной доступной зоны ru-*."
+        print(msg)
+        send_tg_message(msg)
         return
 
-    print(f"\nНачинаем прокрутку по зонам: {', '.join(region_names)}")
+    # === ОПОВЕЩЕНИЕ В TELEGRAM О НАЧАЛЕ ПРОКРУТКИ ===
+    start_msg = (
+        f"🚀 Начинаем прокрутку IP в Selectel!\n"
+        f"📍 Активные зоны: {', '.join(region_names)}\n"
+        f"🔄 План: до {MAX_ATTEMPTS_PER_RUN} попыток (по {ATTEMPTS_PER_ZONE} подряд в каждой зоне)."
+    )
+    print(f"\n{start_msg}")
+    send_tg_message(start_msg)
 
     attempt = 1
     reg_index = 0
+    zone_attempt = 0
 
     while attempt <= MAX_ATTEMPTS_PER_RUN and region_names:
         current_reg = region_names[reg_index % len(region_names)]
@@ -197,7 +205,7 @@ def main():
         ext_net_id = reg_info["ext_net_id"]
 
         print(
-            f"\n--- Попытка {attempt}/{MAX_ATTEMPTS_PER_RUN} [Зона: {current_reg}] ---"
+            f"\n--- Общая попытка {attempt}/{MAX_ATTEMPTS_PER_RUN} | Зона {current_reg} ({zone_attempt + 1}/{ATTEMPTS_PER_ZONE}) ---"
         )
         try:
             new_fip = create_floating_ip(headers, net_url, ext_net_id)
@@ -207,7 +215,7 @@ def main():
             print(f"[{current_reg}] Выпал IP: {ip_address}")
 
             if is_target_ip(ip_address):
-                msg = f"🎯 ПОБЕДА! В Selectel (зона {current_reg}) выбит нужный IP: {ip_address}"
+                msg = f"🎯 ПОБЕДА! В Selectel (зона {current_reg}) на попытке #{attempt} выбит нужный IP: {ip_address}"
                 print(f"\n{msg}")
                 send_tg_message(msg)
                 for r_name in region_names:
@@ -220,46 +228,8 @@ def main():
                 time.sleep(2)
                 delete_floating_ip(headers, net_url, fip_id)
                 attempt += 1
-                reg_index += 1
+                zone_attempt += 1
 
-        except requests.exceptions.HTTPError as err:
-            code = err.response.status_code
-            text = err.response.text
-            print(f"[!] [{current_reg}] Ошибка API (Код {code}): {text}")
-
-            if code == 401:
-                print("[*] Обновляем токен авторизации...")
-                token, _ = get_keystone_session()
-                headers["X-Auth-Token"] = token
-            elif code in (403, 409) and "Quota exceeded" in text:
-                cleaned = cleanup_region_ips(headers, net_url, current_reg)
-                if cleaned == 0:
-                    print(f"[*] В зоне {current_reg} нулевая квота. Исключаем её.")
-                    region_names.remove(current_reg)
-                else:
+                if zone_attempt >= ATTEMPTS_PER_ZONE:
+                    zone_attempt = 0
                     reg_index += 1
-                    time.sleep(5)
-            elif code in (413, 429):
-                print(f"[*] Лимит запросов в зоне {current_reg}! Ждем 20 сек...")
-                cleanup_region_ips(headers, net_url, current_reg)
-                reg_index += 1
-                time.sleep(20)
-            else:
-                cleanup_region_ips(headers, net_url, current_reg)
-                reg_index += 1
-                time.sleep(10)
-            continue
-
-        except Exception as e:
-            print(f"[!] Сбой сети: {e}. Ждем 15 сек...")
-            time.sleep(15)
-            continue
-
-        time.sleep(DELAY_BETWEEN_ATTEMPTS)
-
-    if not region_names:
-        print("\n[!] Во всех зонах ru-* закончилась квота на плавающие IP.")
-    else:
-        print(f"\nВсе {MAX_ATTEMPTS_PER_RUN} попыток завершены.")
-
-main()
